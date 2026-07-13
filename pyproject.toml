@@ -14,7 +14,7 @@ keywords = ["dspy", "llm", "prompt-optimization", "agentic-context-engineering",
 dependencies = []  # the core engine (ace) is pure-Python, zero-dependency
 
 [project.optional-dependencies]
-# The DSPy teleprompter (dspy_ace) — this is what would be upstreamed into dspy.
+# The DSPy teleprompter (ace.integrations.dspy) — upstreamable into dspy.
 dspy = ["dspy>=3.0.0"]
 # Embedding-based dedup (grow-and-refine) if you want it.
 dedup = ["sentence-transformers>=2.2.0"]

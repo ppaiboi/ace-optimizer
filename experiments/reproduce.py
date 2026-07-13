@@ -38,8 +38,8 @@ _VENDOR = ROOT / "vendor/ace-upstream/eval/finance/data"
 DATA = _LOCAL if _LOCAL.exists() else _VENDOR
 RESULTS = ROOT / "experiments/results"
 
+from ace.integrations.dspy import ACE  # noqa: E402
 from ace.trace_io import result_to_dict  # noqa: E402
-from dspy_ace import ACE  # noqa: E402
 
 TASKS = {
     "formula": {
@@ -130,10 +130,10 @@ def _write_traces(args, out: dict, ace_result) -> None:
     archive.write_text(json.dumps(full, indent=2))
 
     trimmed = {**header, "ace": result_to_dict(ace_result, include_prompts=False)}
-    demo = ROOT / "demo/src/trace.json"
+    demo = ROOT / "demo/public/trace.json"
     demo.parent.mkdir(parents=True, exist_ok=True)
     demo.write_text(json.dumps(trimmed, indent=2))
-    print(f"  trace:    {archive.name} (full) + demo/src/trace.json (trimmed)")
+    print(f"  trace:    {archive.name} (full) + demo/public/trace.json (trimmed)")
 
 
 def evaluate(program, dataset, metric, threads: int) -> float:

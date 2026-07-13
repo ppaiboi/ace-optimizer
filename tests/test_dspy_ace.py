@@ -10,8 +10,8 @@ import dspy
 from dspy.utils import DummyLM
 
 from ace import Playbook
-from dspy_ace import ACE, DspyAdapter
-from dspy_ace.generator import ACEGenerator
+from ace.integrations.dspy import ACE, DspyAdapter
+from ace.integrations.dspy.generator import ACEGenerator
 
 
 def exact_match(example, pred, *args):

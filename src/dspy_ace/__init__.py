@@ -1,9 +1,9 @@
-"""dspy_ace — the ACE optimizer as a DSPy teleprompter.
+"""Deprecated import path. Use ``ace.integrations.dspy`` instead.
 
-Prototype home for what would become ``dspy.teleprompt.ace``.
+Kept as a thin shim so existing ``from dspy_ace import ACE`` code keeps working.
 """
 
-from dspy_ace.ace import ACE
-from dspy_ace.adapter import DspyAdapter
+from ace.integrations.dspy import ACE, DspyAdapter
+from ace.integrations.dspy.generator import ACEGenerator
 
-__all__ = ["ACE", "DspyAdapter"]
+__all__ = ["ACE", "DspyAdapter", "ACEGenerator"]

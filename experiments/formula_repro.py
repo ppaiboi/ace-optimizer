@@ -28,7 +28,7 @@ import dspy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from dspy_ace import ACE  # noqa: E402
+from ace.integrations.dspy import ACE  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "vendor/ace-upstream/eval/finance/data"

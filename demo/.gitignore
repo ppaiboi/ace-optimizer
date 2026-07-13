@@ -3,3 +3,4 @@ dist
 *.local
 .vercel
 src/trace.json
+*.tsbuildinfo

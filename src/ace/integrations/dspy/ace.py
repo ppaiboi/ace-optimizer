@@ -16,9 +16,9 @@ import dspy
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
+from ace.integrations.dspy.adapter import DspyAdapter
 from ace.merge import EmbedFn
 from ace.playbook import Playbook
-from dspy_ace.adapter import DspyAdapter
 
 
 @experimental(version="3.2.0")

@@ -19,10 +19,10 @@ from typing import Any
 import dspy
 
 from ace.core.adapter import EvaluationBatch
+from ace.integrations.dspy.generator import ACEGenerator, build_ace_predictor
+from ace.integrations.dspy.signatures import Curate, Reflect
 from ace.merge import Add, Bump
 from ace.playbook import Playbook
-from dspy_ace.generator import ACEGenerator, build_ace_predictor
-from dspy_ace.signatures import Curate, Reflect
 
 _ID_RE = re.compile(r"[a-z]{3,}-\d{5}")
 
