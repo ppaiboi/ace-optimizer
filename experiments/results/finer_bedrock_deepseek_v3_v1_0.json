@@ -1,0 +1,25 @@
+{
+  "task": "finer (ACE paper / FinLoRA)",
+  "model": "bedrock/deepseek.v3-v1:0",
+  "sizes": {
+    "train": 4,
+    "val": 3,
+    "test": 4
+  },
+  "budget": 800,
+  "max_bullets": null,
+  "dedup": false,
+  "results": {
+    "baseline": {
+      "test_acc": 0.6875,
+      "secs": 2
+    },
+    "ace": {
+      "test_acc": 0.75,
+      "metric_calls": 21,
+      "playbook_bullets": 8,
+      "secs": 17
+    }
+  },
+  "ace_playbook": "## BUSINESS_ACQUISITIONS\n[ba-00001] helpful=0 harmful=0 :: Prefer 'BusinessAcquisitionEquityInterestsIssuedOrIssuableNumberOfSharesIssued' for equity issued in acquisitions\n[ba-00002] helpful=0 harmful=0 :: Use 'PaymentsToAcquireBusinessesGross' for cash paid in acquisitions, not net of cash acquired\n[ba-00003] helpful=0 harmful=0 :: Use 'BusinessCombinationConsiderationTransferred1' to capture total consideration in business combinations\n\n## EQUITY_ISSUANCES\n[ei-00004] helpful=0 harmful=0 :: For RSU grants (units, not options), consistently use 'ShareBasedCompensationArrangementByShareBasedPaymentAwardEquityInstrumentsOtherThanOptionsGrantsInPeriod' when reporting number of units granted\n[ei-00005] helpful=0 harmful=0 :: For issuing preferred stock shares, use 'StockIssuedDuringPeriodSharesNewIssues' instead of 'SaleOfStockNumberOfSharesIssuedInTransaction'\n[ei-00006] helpful=0 harmful=0 :: For the conversion price in convertible preferred stock issuances, use 'DebtInstrumentConvertibleConversionPrice1' rather than generic sale price tags\n\n## DEBT_INSTRUMENTS\n[di-00007] helpful=0 harmful=0 :: For stated interest rates in debt descriptions, prefer 'DebtInstrumentInterestRateStatedPercentage' unless context explicitly indicates effective rate\n\n## CREDIT_FACILITIES\n[cf-00008] helpful=0 harmful=0 :: Use 'LineOfCreditFacilityMaximumBorrowingCapacity' for total authorized amount consistently, regardless of phrasing variations\n"
+}
