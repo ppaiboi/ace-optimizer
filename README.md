@@ -1,37 +1,86 @@
 # ace-optimizer
 
-**Agentic Context Engineering (ACE)** for [DSPy](https://github.com/stanfordnlp/dspy) —
-an optimizer that evolves a *playbook* of reusable strategies from execution
-feedback, instead of rewriting a single instruction.
+**Agentic Context Engineering (ACE)** — a framework-agnostic optimizer that
+evolves a *playbook* of reusable strategies from execution feedback, instead of
+rewriting a single instruction. Works with any LLM app; ships with a DSPy
+teleprompter and an Anthropic client wrapper.
 
 Based on Zhang et al., *"Agentic Context Engineering: Evolving Contexts for
 Self-Improving Language Models"* ([arXiv:2510.04618](https://arxiv.org/abs/2510.04618),
 ICLR 2026). Complementary to GEPA, not a replacement.
 
-## Two layers
+## The core idea: split the hot path from the learning path
 
-| Package | What it is | Deps |
-|---|---|---|
-| `ace` | Standalone optimizer engine + deterministic playbook core (delta-merge, grow-and-refine). Pure Python. | none |
-| `dspy_ace` | The `dspy.ACE` teleprompter (intended for upstreaming into `dspy/teleprompt/ace/`). | `dspy` |
+The failure mode of every "self-improving prompt" library is learning
+*synchronously inside the request*. ACE doesn't.
 
-The split mirrors GEPA's packaging: a standalone engine (`gepa`) + a thin native
-teleprompter inside dspy.
-
-## Usage
-
-```python
-import dspy
-from dspy_ace import ACE
-
-optimized = ACE(metric=my_metric, reflection_lm=dspy.LM("openai/gpt-4.1")).compile(
-    program, trainset=trainset, valset=valset,
-)
-# optimized.ace_playbook -> the learned Playbook
+```
+HOT PATH (µs, no LLM)            LEARNING PATH (async, batched, gated)
+────────────────────            ─────────────────────────────────────
+ace.augment(system) ─► prompt   observe() ─► Reflector ─► Curator (Δ: ADD/EDIT/…)
+your model call    ─► response        │                        │
+                                  gate: validate Δ on holdout ──┘
+                                        │ pass → playbook v(n+1)  (versioned)
+                                        │ fail → quarantine + reason
 ```
 
-For a paper-faithful run (per-sample stepping, multi-round reflection, periodic
-validation), pass `faithful=True`.
+The inference path does one thing — string concatenation. If the learning
+subsystem is down, your app doesn't notice.
+
+### Does it need gold labels?
+
+**No.** The Reflector reasons over a *feedback signal*, and labels are just one
+kind. Batteries included: `GroundTruth` (you have labels), `LLMJudge` (you
+don't), `ImplicitUser` (product telemetry: accepted/edited/rejected),
+`ExecutionResult` (tests passed / API 200'd).
+
+## Three integration levels
+
+```python
+# Level 1 — drop-in client wrapper (Anthropic): playbook injected, same interface.
+from ace import ACE, SQLitePlaybookStore, LLMReflector, LLMCurator
+from ace.integrations.anthropic import wrap, completion_fn
+import anthropic
+
+client = anthropic.Anthropic()
+llm = completion_fn(client, model="claude-haiku-4-5")
+ace = ACE(store=SQLitePlaybookStore("playbook.db"),
+          reflector=LLMReflector(llm), curator=LLMCurator(llm))
+client = wrap(client, ace)              # messages.create now injects the playbook
+```
+
+```python
+# Level 2 — explicit control (any stack).
+system = ace.augment(base_system_prompt)          # hot path: pure string op
+result = my_pipeline(system, user_input)
+ace.observe(input=user_input, output=result, signal=ImplicitUser())  # queue a trace
+ace.learn(holdout=holdout, evaluate=eval_fn)      # offline: reflect→curate→gate→promote
+```
+
+```python
+# Level 3 — DSPy teleprompter (batch optimization over a dataset).
+import dspy
+from ace.integrations.dspy import ACE as DspyACE   # (from dspy_ace import ACE still works)
+
+optimized = DspyACE(metric=my_metric, reflection_lm=dspy.LM("openai/gpt-4.1")).compile(
+    program, trainset=trainset, valset=valset,
+)
+```
+
+## What's built
+
+| Module | Role |
+|---|---|
+| `ace.playbook` / `ace.merge` | Pure, deterministic delta core (ADD/BUMP/EDIT/DELETE/MERGE + grow-and-refine). No I/O, no LLM. |
+| `ace.store` | **Event-sourced** delta log (in-memory / JSON / SQLite): playbook@v*n* = fold of the first *n* commits → audit, rollback, time-travel. |
+| `ace.signals` | `Signal` protocol + the four label-free-friendly defaults. |
+| `ace.reflect` / `ace.curate` | Reflector / Curator protocols + LLM-backed defaults (model injected as a `str→str` callable). |
+| `ace.gate` | Promotion policy: validate a candidate on a holdout before it goes live; quarantine rejects. *CD for prompts.* |
+| `ace.facade.ACE` | The hot-path/learning-path facade above. |
+| `ace.integrations.{anthropic,dspy}` | Client wrapper + DSPy teleprompter. |
+
+Everything that touches an LLM sits behind a protocol, so the whole suite runs
+with fakes and zero API calls.
 
 ## Playbook: the artifact
 

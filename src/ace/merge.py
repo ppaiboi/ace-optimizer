@@ -64,6 +64,23 @@ class Merge:
 
 Delta = Add | Bump | Edit | Delete | Merge
 
+_DELTA_TYPES = {c.__name__: c for c in (Add, Bump, Edit, Delete, Merge)}
+
+
+def delta_to_dict(d: Delta) -> dict:
+    """Serialize a delta for the event-sourced log (see ``ace.store``)."""
+    payload = {k: (list(v) if isinstance(v, tuple) else v) for k, v in d.__dict__.items()}
+    return {"op": type(d).__name__, **payload}
+
+
+def delta_from_dict(d: dict) -> Delta:
+    """Inverse of :func:`delta_to_dict`."""
+    cls = _DELTA_TYPES[d["op"]]
+    kwargs = {k: v for k, v in d.items() if k != "op"}
+    if cls is Merge and "ids" in kwargs:
+        kwargs["ids"] = tuple(kwargs["ids"])
+    return cls(**kwargs)
+
 
 # --------------------------------------------------------------------------- #
 # Delta application

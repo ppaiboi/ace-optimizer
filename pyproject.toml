@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ace-optimizer"
 version = "0.1.0"
-description = "Agentic Context Engineering — an evolving-playbook optimizer, with a DSPy teleprompter."
+description = "Agentic Context Engineering — a framework-agnostic evolving-playbook optimizer for any LLM app, with a DSPy teleprompter."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -16,6 +16,8 @@ dependencies = []  # the core engine (ace) is pure-Python, zero-dependency
 [project.optional-dependencies]
 # The DSPy teleprompter (ace.integrations.dspy) — upstreamable into dspy.
 dspy = ["dspy>=3.0.0"]
+# The Anthropic client wrapper (ace.integrations.anthropic).
+anthropic = ["anthropic>=0.39"]
 # Embedding-based dedup (grow-and-refine) if you want it.
 dedup = ["sentence-transformers>=2.2.0"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
