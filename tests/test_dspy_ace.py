@@ -55,20 +55,22 @@ def test_ace_compile_end_to_end_cites_and_adds_a_bullet():
     train = [dspy.Example(question="Capital of France?", answer="Paris").with_inputs("question")]
     val = [dspy.Example(question="Capital of France?", answer="Paris").with_inputs("question")]
 
-    # Ordered: gen(seed-eval), gen(minibatch), reflect, curate, gen(candidate-eval).
-    # Generator calls must now emit bullet_ids too.
+    # Faithful loop, max_num_rounds=1. Ordered LM calls:
+    #   gen(seed-eval), gen(step-initial, wrong), reflect, gen(regenerate),
+    #   curate, gen(final-eval)
     lm = DummyLM(
         [
             {"answer": "Paris", "bullet_ids": ""},
             {"answer": "Lyon", "bullet_ids": ""},
             {"bullet_tags": "", "lessons": "For capital questions, answer with the city name only."},
+            {"answer": "Paris", "bullet_ids": ""},
             {"additions": "geography :: For capital questions, answer with the city name only."},
             {"answer": "Paris", "bullet_ids": "geog-00001"},
         ]
     )
     dspy.configure(lm=lm)
 
-    optimized = ACE(metric=exact_match, minibatch_size=1).compile(
+    optimized = ACE(metric=exact_match, max_num_rounds=1).compile(
         _program(), trainset=train, valset=val
     )
 
@@ -78,4 +80,4 @@ def test_ace_compile_end_to_end_cites_and_adds_a_bullet():
     assert pb.bullets[0].id.startswith("geog-")  # abbreviated slug id
     assert "city name only" in pb.bullets[0].content
     assert "city name only" in optimized.playbook_text  # injected into the returned program
-    assert optimized.ace_result.total_metric_calls == 3  # seed(1)+mb(1)+cand(1)
+    assert optimized.ace_result.total_metric_calls == 4  # seed + initial + regen + final

@@ -18,8 +18,8 @@ from typing import Any
 
 import dspy
 
-from ace.core.adapter import EvaluationBatch, ReflectiveDataset
-from ace.merge import Add, Bump, Delta
+from ace.core.adapter import EvaluationBatch
+from ace.merge import Add, Bump
 from ace.playbook import Playbook
 from dspy_ace.generator import ACEGenerator, build_ace_predictor
 from dspy_ace.signatures import Curate, Reflect
@@ -65,7 +65,6 @@ class DspyAdapter:
         metric: Callable,
         *,
         reflection_lm: dspy.LM | None = None,
-        delta_proposer: Callable[[Playbook, ReflectiveDataset], list[Delta]] | None = None,
         failure_score: float = 0.0,
         num_threads: int = 1,
     ) -> None:
@@ -79,7 +78,6 @@ class DspyAdapter:
         self.reflection_lm = reflection_lm
         self.failure_score = failure_score
         self.num_threads = max(1, num_threads)
-        self._custom_proposer = delta_proposer
         # Build the citing generator from the student's task signature.
         self._base_signature = preds[0][1].signature
         self._predictor = build_ace_predictor(self._base_signature)
@@ -126,64 +124,7 @@ class DspyAdapter:
         trajectories = [r[2] for r in results] if capture_traces else None
         return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
-    # -- reflection dataset --------------------------------------------------
-
-    def make_reflective_dataset(
-        self, playbook: Playbook, eval_batch: EvaluationBatch
-    ) -> ReflectiveDataset:
-        records = []
-        for t in eval_batch.trajectories or []:
-            ex, pred = t["example"], t["pred"]
-            inputs = ex.inputs() if hasattr(ex, "inputs") else ex
-            cited_text, cited_ids = _cited_bullets_text(playbook, t.get("cited", []))
-            records.append(
-                {
-                    "task": str(dict(inputs)),
-                    "generated_output": "" if pred is None else str(pred),
-                    "feedback": t["feedback"],
-                    "bullets_in_play": cited_text,
-                    "cited_ids": cited_ids,
-                }
-            )
-        return {"generator": records}
-
-    # -- reflect + curate -> deltas -----------------------------------------
-
-    def propose_deltas(
-        self, playbook: Playbook, reflective_dataset: ReflectiveDataset
-    ) -> list[Delta]:
-        if self._custom_proposer is not None:
-            return self._custom_proposer(playbook, reflective_dataset)
-
-        records = reflective_dataset.get("generator", [])
-        deltas: list[Delta] = []
-        all_lessons: list[str] = []
-
-        with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
-            for rec in records:
-                # Only bullets this example actually cited may be tagged.
-                cited = set(rec.get("cited_ids", []))
-                try:
-                    r = self._reflect(
-                        task=rec["task"],
-                        generated_output=rec["generated_output"],
-                        feedback=rec["feedback"],
-                        bullets_in_play=rec["bullets_in_play"],
-                    )
-                except Exception:  # a bad LM parse skips this reflection
-                    continue
-                for tag in _lines(r.bullet_tags):
-                    d = _parse_tag(tag, cited)
-                    if d is not None:
-                        deltas.append(d)
-                all_lessons.extend(_lines(r.lessons))
-
-            if all_lessons:
-                deltas.extend(self.curate(playbook, all_lessons))
-        return deltas
-
-
-    # -- fine-grained primitives for the faithful per-sample loop ------------
+    # -- per-sample Generator / Reflector / Curator primitives ---------------
 
     def generate_one(self, sample: Any, playbook: Playbook, reflection: str = "(empty)") -> dict:
         """One generation on a single sample, with optional reflection retry."""
@@ -193,7 +134,7 @@ class DspyAdapter:
             with dspy.context(lm=dspy.settings.lm):
                 pred = prog(reflection=reflection, **inputs)
             score, feedback = _as_score_feedback(self.metric(sample, pred))
-            cited = list(getattr(pred, "bullet_ids", None) or [])
+            cited = _extract_ids(str(getattr(pred, "bullet_ids", "") or ""))
         except Exception as e:
             pred, score, feedback, cited = None, self.failure_score, f"error: {e}", []
         return {"pred": pred, "score": score, "feedback": feedback, "cited": cited}

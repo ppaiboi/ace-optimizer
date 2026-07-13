@@ -5,7 +5,6 @@ Public surface (engine core). The DSPy teleprompter wrapper lives separately.
 
 from ace.core.adapter import ACEAdapter, EvaluationBatch, ReflectiveDataset
 from ace.engine import optimize
-from ace.faithful import optimize_faithful
 from ace.merge import (
     Add,
     Bump,
@@ -38,7 +37,6 @@ __all__ = [
     "EvaluationBatch",
     "ReflectiveDataset",
     "optimize",
-    "optimize_faithful",
     "ACEResult",
     "IterationRecord",
     "OnlinePlaybook",

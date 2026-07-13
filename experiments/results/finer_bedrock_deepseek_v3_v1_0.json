@@ -2,24 +2,20 @@
   "task": "finer (ACE paper / FinLoRA)",
   "model": "bedrock/deepseek.v3-v1:0",
   "sizes": {
-    "train": 4,
-    "val": 3,
-    "test": 4
+    "train": 12,
+    "val": 6,
+    "test": 10
   },
   "budget": 800,
   "max_bullets": null,
   "dedup": false,
   "results": {
-    "baseline": {
-      "test_acc": 0.6875,
-      "secs": 2
-    },
     "ace": {
-      "test_acc": 0.75,
-      "metric_calls": 21,
-      "playbook_bullets": 8,
-      "secs": 17
+      "test_acc": 0.65,
+      "metric_calls": 45,
+      "playbook_bullets": 10,
+      "secs": 57
     }
   },
-  "ace_playbook": "## BUSINESS_ACQUISITIONS\n[ba-00001] helpful=0 harmful=0 :: Prefer 'BusinessAcquisitionEquityInterestsIssuedOrIssuableNumberOfSharesIssued' for equity issued in acquisitions\n[ba-00002] helpful=0 harmful=0 :: Use 'PaymentsToAcquireBusinessesGross' for cash paid in acquisitions, not net of cash acquired\n[ba-00003] helpful=0 harmful=0 :: Use 'BusinessCombinationConsiderationTransferred1' to capture total consideration in business combinations\n\n## EQUITY_ISSUANCES\n[ei-00004] helpful=0 harmful=0 :: For RSU grants (units, not options), consistently use 'ShareBasedCompensationArrangementByShareBasedPaymentAwardEquityInstrumentsOtherThanOptionsGrantsInPeriod' when reporting number of units granted\n[ei-00005] helpful=0 harmful=0 :: For issuing preferred stock shares, use 'StockIssuedDuringPeriodSharesNewIssues' instead of 'SaleOfStockNumberOfSharesIssuedInTransaction'\n[ei-00006] helpful=0 harmful=0 :: For the conversion price in convertible preferred stock issuances, use 'DebtInstrumentConvertibleConversionPrice1' rather than generic sale price tags\n\n## DEBT_INSTRUMENTS\n[di-00007] helpful=0 harmful=0 :: For stated interest rates in debt descriptions, prefer 'DebtInstrumentInterestRateStatedPercentage' unless context explicitly indicates effective rate\n\n## CREDIT_FACILITIES\n[cf-00008] helpful=0 harmful=0 :: Use 'LineOfCreditFacilityMaximumBorrowingCapacity' for total authorized amount consistently, regardless of phrasing variations\n"
+  "ace_playbook": "## EQUITY_COMPENSATION\n[ec-00001] helpful=0 harmful=0 :: For RSU grants (performance or service-based), use equity instruments other than options tags\n[ec-00008] helpful=0 harmful=0 :: For intrinsic value of options exercised, use ShareBasedCompensationArrangementByShareBasedPaymentAwardOptionsExercisesInPeriodTotalIntrinsicValue.\n[ec-00009] helpful=0 harmful=0 :: For RSU grants count, use ShareBasedCompensationArrangementByShareBasedPaymentAwardEquityInstrumentsOtherThanOptionsGrantsInPeriod.\n[ec-00010] helpful=0 harmful=0 :: For total unrecognized stock-based compensation expense, use EmployeeServiceShareBasedCompensationNonvestedAwardsTotalCompensationCostNotYetRecognized.\n\n## PREFERRED_STOCK_ISSUANCE\n[psi-00002] helpful=0 harmful=0 :: Use specific tags indicating new shares issued (e.g., StockIssuedDuringPeriodSharesNewIssues) instead of general sale tags\n\n## CONVERTIBLE_PREFERRED_PRICING\n[cpp-00003] helpful=0 harmful=0 :: For convertible preferred issuance price per share, use tags related to conversion terms (e.g., DebtInstrumentConvertibleConversionPrice1)\n\n## INSURANCE_RESERVE_ACCOUNTING\n[ira-00004] helpful=0 harmful=0 :: For insurance-related adverse or favorable development of reserves (loss adjustments, catastrophe, or non-catastrophe reserves), use the tag: SupplementalInformationForPropertyCasualtyInsuranceUnderwritersPriorYearClaimsAndClaimsAdjustmentExpense\n\n## MAPPING_GUIDELINES\n[mg-00005] helpful=0 harmful=0 :: When mapping financial numbers to US GAAP XBRL tags, first identify the specific attribute (e.g., par value, shares outstanding, shares authorized, shares available under plan) and select the most precise tag available.\n\n## TERMINOLOGY_SENSITIVITY\n[ts-00006] helpful=0 harmful=0 :: Pay careful attention to exact terms (e.g., \"par value,\" \"outstanding,\" \"available under plan,\" \"maximum number of shares authorized\") as these dictate the correct tag selection and avoid misinterpretation.\n\n## OUTPUT_FORMAT\n[of-00007] helpful=0 harmful=0 :: Always output only a comma-separated list of tags in the order corresponding to the input questions, without any extra text, to strictly adhere to required response formats.\n"
 }

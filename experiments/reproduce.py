@@ -131,8 +131,7 @@ def main() -> None:
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--max-bullets", type=int, default=None)
     ap.add_argument("--methods", default="baseline,gepa,ace")
-    # faithful (paper-matching) ACE loop
-    ap.add_argument("--faithful", action="store_true")
+    # ACE loop knobs (the loop is always the paper-matching per-sample loop)
     ap.add_argument("--rounds", type=int, default=3, help="max reflection rounds")
     ap.add_argument("--curator-freq", type=int, default=1)
     ap.add_argument("--eval-steps", type=int, default=100)
@@ -194,11 +193,11 @@ def main() -> None:
     if "ace" in methods:
         t = time.time()
         ace = ACE(
-            metric=feedback_metric, max_metric_calls=args.budget,
+            metric=feedback_metric,
             reflection_lm=dspy.LM(args.model, temperature=1.0, max_tokens=8000),
-            minibatch_size=5, num_threads=args.threads,
+            num_threads=args.threads,
             embed=embed, max_bullets=args.max_bullets,
-            faithful=args.faithful, max_num_rounds=args.rounds,
+            max_num_rounds=args.rounds,
             curator_frequency=args.curator_freq, eval_steps=args.eval_steps,
         )
         aprog = ace.compile(program, trainset=train, valset=val)

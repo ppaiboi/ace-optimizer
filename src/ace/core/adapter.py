@@ -40,7 +40,12 @@ ReflectiveDataset = Mapping[str, Sequence[Mapping[str, Any]]]
 
 @runtime_checkable
 class ACEAdapter(Protocol):
-    """What a target system must implement for the ACE engine to optimize it."""
+    """What a target system must implement for the ACE engine to optimize it.
+
+    ``evaluate`` scores a whole batch (used for validation); ``generate_one`` /
+    ``reflect_one`` / ``curate`` are the per-sample Generator / Reflector /
+    Curator primitives the optimization loop drives.
+    """
 
     def evaluate(
         self,
@@ -48,22 +53,26 @@ class ACEAdapter(Protocol):
         playbook: Playbook,
         capture_traces: bool = False,
     ) -> EvaluationBatch:
-        """Run the system (with ``playbook`` injected as context) over ``batch``.
+        """Run the system (with ``playbook`` injected) over ``batch``.
 
-        Returns per-example outputs + scores (higher is better), plus traces
-        when ``capture_traces`` is True. Must never raise on a single-example
-        failure — return a fallback score instead.
+        Returns per-example outputs + scores (higher is better). Must never
+        raise on a single-example failure — return a fallback score instead.
         """
         ...
 
-    def make_reflective_dataset(
-        self, playbook: Playbook, eval_batch: EvaluationBatch
-    ) -> ReflectiveDataset:
-        """Turn captured traces + feedback into the Reflector's input."""
+    def generate_one(
+        self, sample: Any, playbook: Playbook, reflection: str = "(empty)"
+    ) -> dict:
+        """Generator: one generation on a single sample, optionally retrying
+        with a ``reflection`` hint. Returns
+        ``{pred, score, feedback, cited}``."""
         ...
 
-    def propose_deltas(
-        self, playbook: Playbook, reflective_dataset: ReflectiveDataset
-    ) -> list[Delta]:
-        """Reflector + Curator: distill reflective data into playbook deltas."""
+    def reflect_one(self, sample: Any, gen: dict, playbook: Playbook) -> dict:
+        """Reflector: tag cited bullets + extract lessons + a retry hint.
+        Returns ``{tags: list[Delta], lessons: list[str], reflection_text: str}``."""
+        ...
+
+    def curate(self, playbook: Playbook, lessons: Sequence[str]) -> list[Delta]:
+        """Curator: author new-bullet deltas from accumulated lessons."""
         ...

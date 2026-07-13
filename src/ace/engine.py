@@ -1,10 +1,18 @@
-"""The ACE optimization loop (offline / compile-time).
+"""The ACE optimization loop.
+
+One loop, mirroring the reference `_train_single_sample`:
+  * per-sample stepping
+  * multi-round reflect -> regenerate on wrong answers (``max_num_rounds``;
+    set to 1 for a cheap single-shot variant)
+  * counter updates applied immediately after each reflection
+  * Curator runs every ``curator_frequency`` steps from accumulated lessons
+  * validation runs only every ``eval_steps`` to pick the best playbook
 
 Pure orchestration: the engine only sees floats (scores) and opaque objects
-(deltas, traces). It drives the Generator/Reflector/Curator cycle through the
-adapter and evolves the playbook with the deterministic core in ``ace.merge``.
-
-The same primitives power *online* adaptation — see ``ace.online``.
+(deltas). It drives Generator/Reflector/Curator through the adapter primitives
+(``generate_one`` / ``reflect_one`` / ``curate`` / ``evaluate``) and evolves the
+playbook with the deterministic core in ``ace.merge``. The same primitives power
+*online* adaptation — see ``ace.online``.
 """
 
 from __future__ import annotations
@@ -13,7 +21,6 @@ import random
 from collections.abc import Sequence
 from typing import Any
 
-from ace.core.adapter import ACEAdapter
 from ace.merge import EmbedFn, apply_deltas, grow_and_refine
 from ace.playbook import Playbook
 from ace.result import ACEResult, IterationRecord
@@ -32,43 +39,39 @@ def _cap(playbook: Playbook, max_bullets: int) -> Playbook:
         reverse=True,
     )
     kept_ids = {b.id for b in ranked[:max_bullets]}
-    # preserve original order among survivors
-    kept = tuple(b for b in playbook.bullets if b.id in kept_ids)
+    kept = tuple(b for b in playbook.bullets if b.id in kept_ids)  # preserve order
     return Playbook(bullets=kept, section_order=playbook.section_order)
 
 
-def _minibatches(
-    data: Sequence[Any], size: int, epochs: int, rng: random.Random
-) -> list[list[Any]]:
-    batches: list[list[Any]] = []
-    for _ in range(epochs):
-        idx = list(range(len(data)))
-        rng.shuffle(idx)
-        for i in range(0, len(idx), size):
-            batches.append([data[j] for j in idx[i : i + size]])
-    return batches
+def _reflect_and_bump(adapter: Any, sample: Any, gen: dict, playbook: Playbook):
+    """Reflect on one generation; apply any helpful/harmful counter bumps."""
+    refl = adapter.reflect_one(sample, gen, playbook)
+    if refl["tags"]:
+        playbook = apply_deltas(playbook, refl["tags"])
+    return playbook, refl
 
 
 def optimize(
     seed_playbook: Playbook,
     trainset: Sequence[Any],
-    adapter: ACEAdapter,
+    adapter: Any,
     *,
     valset: Sequence[Any] | None = None,
     epochs: int = 1,
-    minibatch_size: int = 4,
+    max_num_rounds: int = 3,
+    curator_frequency: int = 1,
+    eval_steps: int = 100,
+    perfect_score: float = 1.0,
     embed: EmbedFn | None = None,
     refine_threshold: float = 0.90,
-    refine_every: int = 1,
     max_bullets: int | None = None,
-    max_metric_calls: int | None = None,
     seed: int = 0,
 ) -> ACEResult:
     """Grow a playbook from ``seed_playbook`` over ``trainset``.
 
-    ACE *accumulates*: each accepted delta batch is folded into the running
-    playbook (it does not revert like a Pareto search). ``best_playbook`` still
-    tracks the highest valset score so a late regression can't lose ground.
+    ACE *accumulates*: each sample's lessons are folded into the running
+    playbook. ``best_playbook`` tracks the highest valset score (checked every
+    ``eval_steps``) so a late regression can't lose ground.
     """
     if not trainset:
         raise ValueError("trainset must be non-empty")
@@ -84,39 +87,64 @@ def optimize(
     metric_calls = len(valset)
     history: list[IterationRecord] = []
 
-    for it, batch in enumerate(_minibatches(trainset, minibatch_size, epochs, rng), 1):
-        eval_batch = adapter.evaluate(batch, playbook, capture_traces=True)
-        metric_calls += len(batch)
+    lessons_buffer: list[str] = []
+    step = 0
+    for _ in range(epochs):
+        order = list(range(len(trainset)))
+        rng.shuffle(order)
+        for idx in order:
+            step += 1
+            sample = trainset[idx]
 
-        reflective = adapter.make_reflective_dataset(playbook, eval_batch)
-        deltas = adapter.propose_deltas(playbook, reflective)
+            # -- generate (+ multi-round reflect/regenerate on failure) -------
+            gen = adapter.generate_one(sample, playbook, reflection="(empty)")
+            metric_calls += 1
 
-        candidate = apply_deltas(playbook, deltas)
-        if embed is not None and it % refine_every == 0:
-            candidate = grow_and_refine(candidate, embed, threshold=refine_threshold)
-        if max_bullets is not None and len(candidate.bullets) > max_bullets:
-            candidate = _cap(candidate, max_bullets)
+            if gen["score"] < perfect_score:
+                for _r in range(max_num_rounds):
+                    playbook, refl = _reflect_and_bump(adapter, sample, gen, playbook)
+                    lessons_buffer.extend(refl["lessons"])
+                    gen = adapter.generate_one(
+                        sample, playbook, reflection=refl["reflection_text"]
+                    )
+                    metric_calls += 1
+                    if gen["score"] >= perfect_score:
+                        break
+            else:
+                playbook, refl = _reflect_and_bump(adapter, sample, gen, playbook)
+                lessons_buffer.extend(refl["lessons"])
 
-        candidate_score = full_score(candidate)
-        metric_calls += len(valset)
+            # -- curate every curator_frequency steps -------------------------
+            n_deltas = 0
+            if step % curator_frequency == 0 and lessons_buffer:
+                adds = adapter.curate(playbook, lessons_buffer)
+                n_deltas = len(adds)
+                playbook = apply_deltas(playbook, adds)
+                if embed is not None:
+                    playbook = grow_and_refine(playbook, embed, threshold=refine_threshold)
+                if max_bullets is not None and len(playbook.bullets) > max_bullets:
+                    playbook = _cap(playbook, max_bullets)
+                lessons_buffer = []
 
-        accepted_best = candidate_score >= best_score
-        if accepted_best:
-            best_playbook, best_score = candidate, candidate_score
-        playbook = candidate  # accumulate regardless
+            # -- periodic validation to track the best playbook ---------------
+            if step % eval_steps == 0:
+                s = full_score(playbook)
+                metric_calls += len(valset)
+                if s >= best_score:
+                    best_score, best_playbook = s, playbook
+                history.append(
+                    IterationRecord(
+                        iteration=step, num_deltas=n_deltas, candidate_score=s,
+                        accepted_best=(s >= best_score),
+                        playbook_size=len(playbook.bullets), metric_calls=metric_calls,
+                    )
+                )
 
-        history.append(
-            IterationRecord(
-                iteration=it,
-                num_deltas=len(deltas),
-                candidate_score=candidate_score,
-                accepted_best=accepted_best,
-                playbook_size=len(candidate.bullets),
-                metric_calls=metric_calls,
-            )
-        )
-        if max_metric_calls is not None and metric_calls >= max_metric_calls:
-            break
+    # final validation
+    s = full_score(playbook)
+    metric_calls += len(valset)
+    if s >= best_score:
+        best_score, best_playbook = s, playbook
 
     return ACEResult(
         best_playbook=best_playbook,

@@ -58,11 +58,25 @@ class OnlinePlaybook:
         return build(self.playbook)
 
     def learn(self, episodes: Sequence[Any]) -> list:
-        """Fold lessons from just-run episodes into the playbook. Returns deltas."""
-        eval_batch = self.adapter.evaluate(episodes, self.playbook, capture_traces=True)
-        reflective = self.adapter.make_reflective_dataset(self.playbook, eval_batch)
-        deltas = self.adapter.propose_deltas(self.playbook, reflective)
-        self.playbook = apply_deltas(self.playbook, deltas)
+        """Fold lessons from just-run episodes into the playbook. Returns deltas.
+
+        Uses the same Generator/Reflector/Curator primitives as the offline
+        loop, one episode at a time (no multi-round retry — online adapts from
+        what actually happened).
+        """
+        deltas: list = []
+        lessons: list[str] = []
+        for ep in episodes:
+            gen = self.adapter.generate_one(ep, self.playbook)
+            refl = self.adapter.reflect_one(ep, gen, self.playbook)
+            if refl["tags"]:
+                self.playbook = apply_deltas(self.playbook, refl["tags"])
+                deltas.extend(refl["tags"])
+            lessons.extend(refl["lessons"])
+        adds = self.adapter.curate(self.playbook, lessons)
+        self.playbook = apply_deltas(self.playbook, adds)
+        deltas.extend(adds)
+
         self._episodes += 1
         if self._embed is not None and self._episodes % self._refine_every == 0:
             self.playbook = grow_and_refine(
