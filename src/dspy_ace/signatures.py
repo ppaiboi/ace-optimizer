@@ -1,8 +1,9 @@
 """DSPy signatures for the Reflector and Curator steps.
 
-Kept deliberately small and typed with ``list[str]`` outputs so they are easy
-to drive with a real LM or a ``DummyLM`` in tests, and easy to parse into
-``ace`` deltas.
+Outputs are plain strings (not ``list[str]``) with a documented line format,
+then parsed leniently in the adapter. Typed-list outputs proved fragile across
+models (some LMs format lists in ways dspy's adapter rejects, crashing the
+run); string outputs + our own parsing are robust.
 """
 
 from __future__ import annotations
@@ -25,13 +26,13 @@ class Reflect(dspy.Signature):
         desc="the playbook bullets the system had access to"
     )
 
-    bullet_tags: list[str] = dspy.OutputField(
-        desc="for bullets that clearly helped or hurt, '<bullet_id>: helpful' "
-        "or '<bullet_id>: harmful'; empty list if unclear"
+    bullet_tags: str = dspy.OutputField(
+        desc="one per line, 'BULLET_ID: helpful' or 'BULLET_ID: harmful', for "
+        "bullets that clearly helped or hurt; empty if unclear"
     )
-    lessons: list[str] = dspy.OutputField(
-        desc="new reusable strategies or pitfalls, one concise item each; "
-        "empty list if nothing new was learned"
+    lessons: str = dspy.OutputField(
+        desc="new reusable strategies or pitfalls, ONE PER LINE, concise; "
+        "empty if nothing new was learned"
     )
 
 
@@ -45,7 +46,7 @@ class Curate(dspy.Signature):
     existing_playbook: str = dspy.InputField(desc="current playbook, may be empty")
     lessons: str = dspy.InputField(desc="candidate lessons from reflection")
 
-    additions: list[str] = dspy.OutputField(
-        desc="new bullets, each formatted '<section> :: <content>'; "
-        "empty list if nothing should be added"
+    additions: str = dspy.OutputField(
+        desc="new bullets, ONE PER LINE, each formatted 'section :: content'; "
+        "empty if nothing should be added"
     )

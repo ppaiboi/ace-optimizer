@@ -59,11 +59,11 @@ def test_ace_compile_end_to_end_cites_and_adds_a_bullet():
     # Generator calls must now emit bullet_ids too.
     lm = DummyLM(
         [
-            {"answer": "Paris", "bullet_ids": []},
-            {"answer": "Lyon", "bullet_ids": []},
-            {"bullet_tags": [], "lessons": ["For capital questions, answer with the city name only."]},
-            {"additions": ["geography :: For capital questions, answer with the city name only."]},
-            {"answer": "Paris", "bullet_ids": ["geog-00001"]},
+            {"answer": "Paris", "bullet_ids": ""},
+            {"answer": "Lyon", "bullet_ids": ""},
+            {"bullet_tags": "", "lessons": "For capital questions, answer with the city name only."},
+            {"additions": "geography :: For capital questions, answer with the city name only."},
+            {"answer": "Paris", "bullet_ids": "geog-00001"},
         ]
     )
     dspy.configure(lm=lm)

@@ -19,8 +19,8 @@ _PLAYBOOK_DESC = (
     "Use the relevant strategies; ignore irrelevant ones. May be empty."
 )
 _CITE_DESC = (
-    "List of the playbook bullet ids you actually relied on to answer "
-    "(e.g. ['calc-00003']). Empty list if the playbook did not help."
+    "The playbook bullet ids you actually relied on, comma-separated "
+    "(e.g. 'calc-00003, err-00007'). Empty if the playbook did not help."
 )
 _REFLECTION_DESC = (
     "Feedback from a previous failed attempt at this task, if any. Use it to "
@@ -38,7 +38,7 @@ def build_ace_predictor(base_signature) -> dspy.Predict:
         "playbook", dspy.InputField(desc=_PLAYBOOK_DESC), type_=str
     )
     sig = sig.append(
-        "bullet_ids", dspy.OutputField(desc=_CITE_DESC), type_=list[str]
+        "bullet_ids", dspy.OutputField(desc=_CITE_DESC), type_=str
     )
     return dspy.Predict(sig)
 

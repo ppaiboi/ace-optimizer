@@ -12,6 +12,7 @@ extension.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -22,6 +23,18 @@ from ace.merge import Add, Bump, Delta
 from ace.playbook import Playbook
 from dspy_ace.generator import ACEGenerator, build_ace_predictor
 from dspy_ace.signatures import Curate, Reflect
+
+_ID_RE = re.compile(r"[a-z]{3,}-\d{5}")
+
+
+def _extract_ids(text: str) -> list[str]:
+    """Pull well-formed bullet ids out of a free-form string (robust to prose)."""
+    return _ID_RE.findall(text or "")
+
+
+def _lines(text: str) -> list[str]:
+    """Non-empty, stripped lines of a string output."""
+    return [x.strip() for x in (text or "").splitlines() if x.strip()]
 
 
 def _as_score_feedback(result: Any) -> tuple[float, str]:
@@ -93,7 +106,7 @@ class DspyAdapter:
             try:
                 pred = prog(**inputs)
                 score, feedback = _as_score_feedback(self.metric(ex, pred))
-                cited = list(getattr(pred, "bullet_ids", None) or [])
+                cited = _extract_ids(str(getattr(pred, "bullet_ids", "") or ""))
             except Exception as e:  # never raise on a single example
                 pred, score, feedback, cited = None, self.failure_score, f"error: {e}", []
             return pred, score, {
@@ -150,27 +163,23 @@ class DspyAdapter:
             for rec in records:
                 # Only bullets this example actually cited may be tagged.
                 cited = set(rec.get("cited_ids", []))
-                r = self._reflect(
-                    task=rec["task"],
-                    generated_output=rec["generated_output"],
-                    feedback=rec["feedback"],
-                    bullets_in_play=rec["bullets_in_play"],
-                )
-                for tag in r.bullet_tags or []:
+                try:
+                    r = self._reflect(
+                        task=rec["task"],
+                        generated_output=rec["generated_output"],
+                        feedback=rec["feedback"],
+                        bullets_in_play=rec["bullets_in_play"],
+                    )
+                except Exception:  # a bad LM parse skips this reflection
+                    continue
+                for tag in _lines(r.bullet_tags):
                     d = _parse_tag(tag, cited)
                     if d is not None:
                         deltas.append(d)
-                all_lessons.extend(ln for ln in (r.lessons or []) if ln.strip())
+                all_lessons.extend(_lines(r.lessons))
 
             if all_lessons:
-                c = self._curate(
-                    existing_playbook=playbook.render().strip() or "(empty)",
-                    lessons="\n".join(f"- {ln}" for ln in all_lessons),
-                )
-                for add in c.additions or []:
-                    d = _parse_addition(add)
-                    if d is not None:
-                        deltas.append(d)
+                deltas.extend(self.curate(playbook, all_lessons))
         return deltas
 
 
@@ -193,16 +202,19 @@ class DspyAdapter:
         """One reflection: tag cited bullets + extract lessons + a retry hint."""
         inputs = sample.inputs() if hasattr(sample, "inputs") else sample
         cited_text, cited_ids = _cited_bullets_text(playbook, gen.get("cited", []))
-        with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
-            r = self._reflect(
-                task=str(dict(inputs)),
-                generated_output="" if gen["pred"] is None else str(gen["pred"]),
-                feedback=gen["feedback"],
-                bullets_in_play=cited_text,
-            )
+        try:
+            with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
+                r = self._reflect(
+                    task=str(dict(inputs)),
+                    generated_output="" if gen["pred"] is None else str(gen["pred"]),
+                    feedback=gen["feedback"],
+                    bullets_in_play=cited_text,
+                )
+        except Exception:  # a bad LM parse -> no tags/lessons this round
+            return {"tags": [], "lessons": [], "reflection_text": gen["feedback"]}
         allowed = set(cited_ids)
-        tags = [d for t in (r.bullet_tags or []) if (d := _parse_tag(t, allowed))]
-        lessons = [ln for ln in (r.lessons or []) if ln.strip()]
+        tags = [d for t in _lines(r.bullet_tags) if (d := _parse_tag(t, allowed))]
+        lessons = _lines(r.lessons)
         retry_hint = gen["feedback"] + ("\n" + "\n".join(lessons) if lessons else "")
         return {"tags": tags, "lessons": lessons, "reflection_text": retry_hint}
 
@@ -210,12 +222,15 @@ class DspyAdapter:
         """Author new bullets from accumulated lessons (Curator role)."""
         if not lessons:
             return []
-        with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
-            c = self._curate(
-                existing_playbook=playbook.render().strip() or "(empty)",
-                lessons="\n".join(f"- {ln}" for ln in lessons),
-            )
-        return [d for a in (c.additions or []) if (d := _parse_addition(a))]
+        try:
+            with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
+                c = self._curate(
+                    existing_playbook=playbook.render().strip() or "(empty)",
+                    lessons="\n".join(f"- {ln}" for ln in lessons),
+                )
+        except Exception:  # a bad LM parse -> add nothing this step
+            return []
+        return [d for a in _lines(c.additions) if (d := _parse_addition(a))]
 
 
 def _parse_tag(tag: str, allowed_ids: set[str]) -> Bump | None:
