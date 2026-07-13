@@ -1,0 +1,10 @@
+vendor/
+__pycache__/
+*.pyc
+.venv/
+.env
+# run logs (in-progress / noisy); keep the JSON result artifacts
+experiments/results/*.log
+*.egg-info/
+build/
+dist/

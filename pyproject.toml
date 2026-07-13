@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ace-optimizer"
+version = "0.1.0"
+description = "Agentic Context Engineering — an evolving-playbook optimizer, with a DSPy teleprompter."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Pierre Rappolt" }]
+keywords = ["dspy", "llm", "prompt-optimization", "agentic-context-engineering", "ace"]
+dependencies = []  # the core engine (ace) is pure-Python, zero-dependency
+
+[project.optional-dependencies]
+# The DSPy teleprompter (dspy_ace) — this is what would be upstreamed into dspy.
+dspy = ["dspy>=3.0.0"]
+# Embedding-based dedup (grow-and-refine) if you want it.
+dedup = ["sentence-transformers>=2.2.0"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/ppaiboi/dspy-ace"
+Paper = "https://arxiv.org/abs/2510.04618"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ace", "src/dspy_ace"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # long lines in prompts/docstrings are fine

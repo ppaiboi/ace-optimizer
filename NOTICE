@@ -1,0 +1,19 @@
+ace-optimizer
+Copyright 2026 Pierre Rappolt
+
+This product includes software derived from the ACE reference implementation
+("Agentic Context Engineering"), Copyright (c) 2025 SambaNova Systems and the
+ACE contributors, licensed under the Apache License, Version 2.0:
+
+    https://github.com/ace-agent/ace
+
+Specifically, the playbook line format and parsing, the section-slug / bullet-id
+allocation scheme, and the helpful/harmful counter semantics in
+`src/ace/playbook.py` and `src/ace/merge.py` are derived from that project's
+`playbook_utils.py` and `utils.py`. The delta operations (UPDATE / MERGE /
+DELETE), the deterministic grow-and-refine, the ACEAdapter/engine architecture,
+and the DSPy integration in `src/dspy_ace/` are original to this project.
+
+The method is described in:
+    Zhang et al., "Agentic Context Engineering: Evolving Contexts for
+    Self-Improving Language Models", arXiv:2510.04618 (ICLR 2026).
