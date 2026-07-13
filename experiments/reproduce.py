@@ -38,6 +38,7 @@ _VENDOR = ROOT / "vendor/ace-upstream/eval/finance/data"
 DATA = _LOCAL if _LOCAL.exists() else _VENDOR
 RESULTS = ROOT / "experiments/results"
 
+from ace.trace_io import result_to_dict  # noqa: E402
 from dspy_ace import ACE  # noqa: E402
 
 TASKS = {
@@ -115,6 +116,26 @@ def make_metrics(task: str):
     return base, feedback_metric
 
 
+def _write_traces(args, out: dict, ace_result) -> None:
+    """Cache the ACE trace: a full archive (with raw prompts) next to the other
+    results, and a trimmed, browser-loadable copy at demo/src/trace.json."""
+    slug = re.sub(r"[^a-z0-9]+", "_", args.model.lower())
+    header = {
+        "benchmark": out["task"], "model": args.model, "sizes": out["sizes"],
+        "test_acc": {k: v.get("test_acc") for k, v in out["results"].items()},
+    }
+
+    full = {**header, "ace": result_to_dict(ace_result, include_prompts=True)}
+    archive = RESULTS / f"{args.task}_{slug}_trace_full.json"
+    archive.write_text(json.dumps(full, indent=2))
+
+    trimmed = {**header, "ace": result_to_dict(ace_result, include_prompts=False)}
+    demo = ROOT / "demo/src/trace.json"
+    demo.parent.mkdir(parents=True, exist_ok=True)
+    demo.write_text(json.dumps(trimmed, indent=2))
+    print(f"  trace:    {archive.name} (full) + demo/src/trace.json (trimmed)")
+
+
 def evaluate(program, dataset, metric, threads: int) -> float:
     ev = dspy.Evaluate(
         devset=dataset, metric=metric, num_threads=threads,
@@ -139,6 +160,8 @@ def main() -> None:
     ap.add_argument("--curator-freq", type=int, default=1)
     ap.add_argument("--eval-steps", type=int, default=100)
     ap.add_argument("--dedup", action="store_true", help="off by default, matching the paper")
+    ap.add_argument("--trace", action="store_true",
+                    help="cache the full ACE trace (archive JSON + demo/src/trace.json)")
     args = ap.parse_args()
 
     load_dotenv()
@@ -218,6 +241,9 @@ def main() -> None:
         out["ace_playbook"] = aprog.ace_playbook.render()
         print(f"  ACE:      {acc:.1%}  (rollouts={aprog.ace_result.total_metric_calls}, "
               f"{len(aprog.ace_playbook.bullets)} bullets)")
+
+        if args.trace:
+            _write_traces(args, out, aprog.ace_result)
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^a-z0-9]+", "_", args.model.lower())

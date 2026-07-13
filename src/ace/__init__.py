@@ -18,7 +18,16 @@ from ace.merge import (
 )
 from ace.online import OnlinePlaybook
 from ace.playbook import Bullet, Playbook, id_slug
-from ace.result import ACEResult, IterationRecord
+from ace.result import (
+    ACEResult,
+    BulletEdit,
+    GenAttempt,
+    IterationRecord,
+    LMCall,
+    ReflectRecord,
+    StepRecord,
+    TraceCheckpoint,
+)
 
 __all__ = [
     "Bullet",
@@ -39,5 +48,11 @@ __all__ = [
     "optimize",
     "ACEResult",
     "IterationRecord",
+    "TraceCheckpoint",
+    "StepRecord",
+    "GenAttempt",
+    "ReflectRecord",
+    "LMCall",
+    "BulletEdit",
     "OnlinePlaybook",
 ]

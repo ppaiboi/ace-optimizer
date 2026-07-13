@@ -56,6 +56,52 @@ def _cited_bullets_text(playbook: Playbook, cited_ids: Sequence[str]) -> tuple[s
     return "\n".join(known[i].render() for i in valid), valid
 
 
+def _capture(lm: Any, n0: int, role: str) -> list[dict]:
+    """Return the raw LM interactions appended to ``lm.history`` since index
+    ``n0`` — the full rendered messages and the completion — as plain dicts.
+    Best-effort and defensive across dspy versions/LM backends."""
+    out: list[dict] = []
+    hist = getattr(lm, "history", None)
+    if not hist:
+        return out
+    for entry in hist[n0:]:
+        if not isinstance(entry, dict):
+            continue
+        messages = entry.get("messages")
+        if not messages:
+            prompt = entry.get("prompt")
+            messages = [{"role": "user", "content": str(prompt)}] if prompt else []
+        outputs = entry.get("outputs") or entry.get("response") or ""
+        if isinstance(outputs, (list, tuple)):
+            completion = "\n".join(str(o) for o in outputs)
+        else:
+            completion = str(outputs)
+        out.append({
+            "role": role,
+            "messages": [
+                {"role": m.get("role", ""), "content": str(m.get("content", ""))}
+                if isinstance(m, dict) else {"role": "", "content": str(m)}
+                for m in messages
+            ],
+            "completion": completion,
+        })
+    return out
+
+
+def _gold_of(sample: Any) -> str:
+    """A readable gold-label string for tracing (best-effort)."""
+    try:
+        labels = sample.labels()
+        vals = labels.values() if hasattr(labels, "values") else dict(labels).values()
+        return ", ".join(str(v) for v in vals)
+    except Exception:
+        return ""
+
+
+def _inputs_of(sample: Any) -> dict:
+    return sample.inputs() if hasattr(sample, "inputs") else sample
+
+
 class DspyAdapter:
     """Adapts a single-signature dspy program for ACE optimization."""
 
@@ -83,6 +129,7 @@ class DspyAdapter:
         self._predictor = build_ace_predictor(self._base_signature)
         self._reflect = dspy.Predict(Reflect)
         self._curate = dspy.Predict(Curate)
+        self.last_curate: dict = {}  # raw curator LM calls, read by the engine tracer
 
     # -- candidate -> program ------------------------------------------------
 
@@ -128,23 +175,31 @@ class DspyAdapter:
 
     def generate_one(self, sample: Any, playbook: Playbook, reflection: str = "(empty)") -> dict:
         """One generation on a single sample, with optional reflection retry."""
-        inputs = sample.inputs() if hasattr(sample, "inputs") else sample
+        inputs = _inputs_of(sample)
         prog = self.build_program(playbook)
+        lm = dspy.settings.lm
+        n0 = len(getattr(lm, "history", []) or [])
         try:
-            with dspy.context(lm=dspy.settings.lm):
+            with dspy.context(lm=lm):
                 pred = prog(reflection=reflection, **inputs)
             score, feedback = _as_score_feedback(self.metric(sample, pred))
             cited = _extract_ids(str(getattr(pred, "bullet_ids", "") or ""))
         except Exception as e:
             pred, score, feedback, cited = None, self.failure_score, f"error: {e}", []
-        return {"pred": pred, "score": score, "feedback": feedback, "cited": cited}
+        return {
+            "pred": pred, "score": score, "feedback": feedback, "cited": cited,
+            "inputs": str(dict(inputs)), "gold": _gold_of(sample),
+            "calls": _capture(lm, n0, "generator"),
+        }
 
     def reflect_one(self, sample: Any, gen: dict, playbook: Playbook) -> dict:
         """One reflection: tag cited bullets + extract lessons + a retry hint."""
-        inputs = sample.inputs() if hasattr(sample, "inputs") else sample
+        inputs = _inputs_of(sample)
         cited_text, cited_ids = _cited_bullets_text(playbook, gen.get("cited", []))
+        lm = self.reflection_lm or dspy.settings.lm
+        n0 = len(getattr(lm, "history", []) or [])
         try:
-            with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
+            with dspy.context(lm=lm):
                 r = self._reflect(
                     task=str(dict(inputs)),
                     generated_output="" if gen["pred"] is None else str(gen["pred"]),
@@ -152,25 +207,32 @@ class DspyAdapter:
                     bullets_in_play=cited_text,
                 )
         except Exception:  # a bad LM parse -> no tags/lessons this round
-            return {"tags": [], "lessons": [], "reflection_text": gen["feedback"]}
+            return {"tags": [], "lessons": [], "reflection_text": gen["feedback"],
+                    "calls": _capture(lm, n0, "reflector")}
         allowed = set(cited_ids)
         tags = [d for t in _lines(r.bullet_tags) if (d := _parse_tag(t, allowed))]
         lessons = _lines(r.lessons)
         retry_hint = gen["feedback"] + ("\n" + "\n".join(lessons) if lessons else "")
-        return {"tags": tags, "lessons": lessons, "reflection_text": retry_hint}
+        return {"tags": tags, "lessons": lessons, "reflection_text": retry_hint,
+                "calls": _capture(lm, n0, "reflector")}
 
     def curate(self, playbook: Playbook, lessons: Sequence[str]) -> list[Add]:
         """Author new bullets from accumulated lessons (Curator role)."""
+        self.last_curate = {}
         if not lessons:
             return []
+        lm = self.reflection_lm or dspy.settings.lm
+        n0 = len(getattr(lm, "history", []) or [])
         try:
-            with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
+            with dspy.context(lm=lm):
                 c = self._curate(
                     existing_playbook=playbook.render().strip() or "(empty)",
                     lessons="\n".join(f"- {ln}" for ln in lessons),
                 )
         except Exception:  # a bad LM parse -> add nothing this step
+            self.last_curate = {"calls": _capture(lm, n0, "curator")}
             return []
+        self.last_curate = {"calls": _capture(lm, n0, "curator")}
         return [d for a in _lines(c.additions) if (d := _parse_addition(a))]
 
 
