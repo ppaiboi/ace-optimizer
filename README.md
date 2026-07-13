@@ -51,6 +51,28 @@ embedding-based grow-and-refine — all pure functions, fully unit-tested.
 `experiments/reproduce.py` runs baseline vs GEPA vs ACE on the paper's own
 finance benchmarks (FiNER, Formula). See `docs/rfc/` for the design proposal.
 
+**One-click:**
+
+```bash
+# 1. fetch the paper's data (16 MB, stdlib only, pinned upstream commit)
+python experiments/fetch_data.py
+
+# 2. exact paper reproduction — DeepSeek-V3.1 (the paper's model, all roles)
+PYTHONPATH=src python experiments/reproduce.py \
+    --task finer --model bedrock/deepseek.v3-v1:0 \
+    --train 1000 --val 500 --test 441 \
+    --rounds 3 --curator-freq 1 --eval-steps 100 --threads 8
+```
+
+For an **exact** reproduction use `bedrock/deepseek.v3-v1:0` (DeepSeek-V3.1 on AWS
+Bedrock, region `us-west-2`) — the model the ACE paper uses for the Generator,
+Reflector, and Curator. Any other model (e.g. `openai/gpt-4o-mini`) reproduces the
+paper's *direction* (ACE ≥ GEPA ≥ baseline) but not its absolute numbers.
+
+**Bring your own data:** drop JSONL files into `experiments/data/` — one
+`{"context": "...", "target": "..."}` object per line — and point `TASKS` in
+`reproduce.py` at them. See `experiments/fetch_data.py` for the format and examples.
+
 ## Status
 
 Early prototype. Design under discussion (see `docs/rfc/0001-dspy-ace-optimizer.md`).

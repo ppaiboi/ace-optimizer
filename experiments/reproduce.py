@@ -32,7 +32,10 @@ import dspy
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-DATA = ROOT / "vendor/ace-upstream/eval/finance/data"
+# Prefer the fetch_data.py download dir; fall back to a local upstream clone.
+_LOCAL = ROOT / "experiments/data"
+_VENDOR = ROOT / "vendor/ace-upstream/eval/finance/data"
+DATA = _LOCAL if _LOCAL.exists() else _VENDOR
 RESULTS = ROOT / "experiments/results"
 
 from dspy_ace import ACE  # noqa: E402
@@ -94,10 +97,10 @@ def formula_score(example, pred, *a) -> float:
 def finer_score(example, pred, *a) -> float:
     """Fraction of comma-aligned tag positions correct (paper's FiNER metric)."""
     p = [v.lower().strip() for v in str(getattr(pred, "answer", "")).split(",")]
-    l = [v.lower().strip() for v in example.answer.split(",")]
-    if len(p) != len(l):
-        p = p[: len(l)] if len(p) > len(l) else p + [""] * (len(l) - len(p))
-    return (sum(a == b for a, b in zip(p, l)) / len(p)) if p else 0.0
+    gold = [v.lower().strip() for v in example.answer.split(",")]
+    if len(p) != len(gold):
+        p = p[: len(gold)] if len(p) > len(gold) else p + [""] * (len(gold) - len(p))
+    return (sum(a == b for a, b in zip(p, gold, strict=False)) / len(p)) if p else 0.0
 
 
 def make_metrics(task: str):
@@ -139,6 +142,11 @@ def main() -> None:
     args = ap.parse_args()
 
     load_dotenv()
+    files = TASKS[args.task]
+    if not (DATA / files["test"]).exists():
+        print(f"Benchmark data not found in {DATA}.\n"
+              "Run this first:  python experiments/fetch_data.py")
+        return
     if "bedrock" not in args.model and not any(
         k in os.environ for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "TOGETHERAI_API_KEY")
     ):
@@ -146,7 +154,6 @@ def main() -> None:
         return
 
     dspy.configure(lm=dspy.LM(args.model, max_tokens=4096))
-    files = TASKS[args.task]
     train = load(files["train"], args.train)
     val = load(files["val"], args.val)
     test = load(files["test"], args.test)

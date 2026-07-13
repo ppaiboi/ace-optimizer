@@ -8,3 +8,6 @@ experiments/results/*.log
 *.egg-info/
 build/
 dist/
+
+# Downloaded benchmark data (fetch via experiments/fetch_data.py)
+experiments/data/
