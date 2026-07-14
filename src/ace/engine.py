@@ -123,6 +123,7 @@ def optimize(
     checkpoint_every: int = 50,
     resume: bool = True,
     progress: bool = False,
+    fail_fast: int = 10,
 ) -> ACEResult:
     """Grow a playbook from ``seed_playbook`` over ``trainset``.
 
@@ -179,6 +180,7 @@ def optimize(
         trace = [TraceCheckpoint(0, seed_score, metric_calls, seed_playbook)]
 
     steps: list[StepRecord] = []
+    consecutive_errors = 0  # abort if generation keeps failing (bad creds/model/etc.)
 
     def _save(step: int) -> None:
         if checkpoint_path:
@@ -202,6 +204,24 @@ def optimize(
         gen = adapter.generate_one(sample, playbook, reflection="(empty)")
         metric_calls += 1
         attempts.append(_gen_attempt(0, "(empty)", gen))
+
+        # fail-fast: a run of pure errors means something systemic is wrong
+        # (expired credentials, revoked model access, wrong region) — abort
+        # loudly instead of silently producing a degenerate 0-score playbook.
+        if gen.get("error"):
+            consecutive_errors += 1
+            if fail_fast and consecutive_errors >= fail_fast:
+                if checkpoint_path:
+                    _save(step - 1)
+                raise RuntimeError(
+                    f"aborting: {consecutive_errors} consecutive generation errors "
+                    f"at step {step}. Last error: {gen['error']}. "
+                    "Check credentials / model access / region. "
+                    + (f"Resume from {checkpoint_path} once fixed."
+                       if checkpoint_path else "")
+                )
+        else:
+            consecutive_errors = 0
 
         if gen["score"] < perfect_score:
             for _r in range(max_num_rounds):

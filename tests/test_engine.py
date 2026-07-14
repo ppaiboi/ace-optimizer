@@ -109,6 +109,24 @@ def test_interim_valset_used_for_periodic_checks():
     assert ("full1", "full2") in seen["sets"]    # final used the full valset
 
 
+def test_fail_fast_aborts_on_systemic_generation_errors():
+    import pytest
+
+    class BrokenAdapter(StubAdapter):
+        def generate_one(self, sample, playbook, reflection="(empty)"):
+            self.gen_calls += 1
+            return {"pred": None, "score": 0.0, "feedback": "err", "cited": [],
+                    "error": "ExpiredToken"}
+
+    a = BrokenAdapter()
+    with pytest.raises(RuntimeError, match="consecutive generation errors"):
+        optimize(Playbook(), [f"s{i}" for i in range(50)], a, valset=["v"],
+                 max_num_rounds=1, eval_steps=100, fail_fast=5)
+    # aborted at the 5th erroring step (not all 50 samples); each step makes an
+    # initial + a regenerate call, so ~9 calls, nowhere near 50.
+    assert a.gen_calls < 12
+
+
 def test_online_playbook_accumulates_across_episodes():
     mem = OnlinePlaybook(StubAdapter(adds_per_curate=2))
     assert len(mem.playbook.bullets) == 0

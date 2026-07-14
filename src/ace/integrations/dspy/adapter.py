@@ -184,6 +184,7 @@ class DspyAdapter:
         prog = self.build_program(playbook)
         lm = dspy.settings.lm
         n0 = len(getattr(lm, "history", []) or [])
+        error = None
         try:
             with dspy.context(lm=lm):
                 pred = prog(reflection=reflection, **inputs)
@@ -191,10 +192,11 @@ class DspyAdapter:
             cited = _extract_ids(str(getattr(pred, "bullet_ids", "") or ""))
         except Exception as e:
             pred, score, feedback, cited = None, self.failure_score, f"error: {e}", []
+            error = str(e)
         return {
             "pred": pred, "score": score, "feedback": feedback, "cited": cited,
             "inputs": str(dict(inputs)), "gold": _gold_of(sample),
-            "calls": _capture(lm, n0, "generator"),
+            "calls": _capture(lm, n0, "generator"), "error": error,
         }
 
     def reflect_one(self, sample: Any, gen: dict, playbook: Playbook) -> dict:
