@@ -21,7 +21,7 @@ import dspy
 from ace.core.adapter import EvaluationBatch
 from ace.integrations.dspy.generator import ACEGenerator, build_ace_predictor
 from ace.integrations.dspy.signatures import Curate, Reflect
-from ace.merge import Add, Bump
+from ace.merge import Add, Bump, Delete, Edit, Merge
 from ace.playbook import Playbook
 
 _ID_RE = re.compile(r"[a-z]{3,}-\d{5}")
@@ -226,8 +226,10 @@ class DspyAdapter:
         return {"tags": tags, "lessons": lessons, "reflection_text": retry_hint,
                 "calls": _capture(lm, n0, "reflector")}
 
-    def curate(self, playbook: Playbook, lessons: Sequence[str]) -> list[Add]:
-        """Author new bullets from accumulated lessons (Curator role)."""
+    def curate(self, playbook: Playbook, lessons: Sequence[str]) -> list:
+        """Propose playbook edit operations from accumulated lessons (Curator
+        role). Emits ADD/UPDATE/DELETE/MERGE deltas so the playbook stays lean
+        and self-corrects — not append-only."""
         self.last_curate = {}
         if not lessons:
             return []
@@ -243,7 +245,11 @@ class DspyAdapter:
             self.last_curate = {"calls": _capture(lm, n0, "curator")}
             return []
         self.last_curate = {"calls": _capture(lm, n0, "curator")}
-        return [d for a in _lines(c.additions) if (d := _parse_addition(a))]
+        known_ids = {b.id for b in playbook.bullets}
+        return [
+            d for line in _lines(c.operations)
+            if (d := _parse_operation(line, known_ids))
+        ]
 
 
 def _parse_tag(tag: str, allowed_ids: set[str]) -> Bump | None:
@@ -256,10 +262,37 @@ def _parse_tag(tag: str, allowed_ids: set[str]) -> Bump | None:
     return None
 
 
-def _parse_addition(add: str) -> Add | None:
-    if "::" in add:
-        section, _, content = add.partition("::")
-        section, content = section.strip(), content.strip()
+def _parse_operation(line: str, known_ids: set[str]):
+    """Parse one curator line into a delta. Supports the full operation set so
+    the playbook self-regulates (add, refine, prune, merge) instead of only
+    growing. UPDATE/DELETE/MERGE only apply to ids that actually exist."""
+    line = line.strip()
+    if not line:
+        return None
+    head, _, rest = line.partition(" ")
+    op = head.strip().upper()
+
+    if op == "DELETE":
+        bid = rest.strip().strip(":").split()[0] if rest.strip() else ""
+        return Delete(id=bid) if bid in known_ids else None
+
+    if op == "UPDATE":
+        target, _, content = rest.partition("::")
+        bid, content = target.strip(), content.strip()
+        return Edit(id=bid, content=content) if (bid in known_ids and content) else None
+
+    if op == "MERGE":
+        target, _, content = rest.partition("::")
+        ids = tuple(i.strip() for i in target.replace(" ", "").split(",") if i.strip())
+        ids = tuple(i for i in ids if i in known_ids)
+        content = content.strip()
+        return Merge(ids=ids, content=content) if (len(ids) >= 2 and content) else None
+
+    # ADD (explicit "ADD SECTION :: content", or a bare "section :: content")
+    body = rest if op == "ADD" else line
+    if "::" in body:
+        section, _, content = body.partition("::")
+        section, content = section.strip() or "general", content.strip()
     else:
-        section, content = "general", add.strip()
+        section, content = "general", body.strip()
     return Add(content=content, section=section) if content else None

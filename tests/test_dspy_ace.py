@@ -11,11 +11,29 @@ from dspy.utils import DummyLM
 
 from ace import Playbook
 from ace.integrations.dspy import ACE, DspyAdapter
+from ace.integrations.dspy.adapter import _parse_operation
 from ace.integrations.dspy.generator import ACEGenerator
+from ace.merge import Add, Delete, Edit, Merge
 
 
 def exact_match(example, pred, *args):
     return 1.0 if str(getattr(pred, "answer", "")).strip() == example.answer else 0.0
+
+
+def test_curator_parses_all_operations_and_guards_ids():
+    known = {"calc-00001", "calc-00002"}
+    # ADD (explicit and bare)
+    assert _parse_operation("ADD math :: divide first", known) == Add("divide first", "math")
+    assert _parse_operation("style :: be terse", known) == Add("be terse", "style")
+    # UPDATE / DELETE / MERGE reference existing ids
+    assert _parse_operation("UPDATE calc-00001 :: better wording", known) == \
+        Edit("calc-00001", "better wording")
+    assert _parse_operation("DELETE calc-00002", known) == Delete("calc-00002")
+    assert _parse_operation("MERGE calc-00001,calc-00002 :: merged", known) == \
+        Merge(ids=("calc-00001", "calc-00002"), content="merged")
+    # operations on unknown ids are rejected (can't delete what isn't there)
+    assert _parse_operation("DELETE calc-99999", known) is None
+    assert _parse_operation("UPDATE calc-99999 :: x", known) is None
 
 
 def _program():
@@ -64,7 +82,7 @@ def test_ace_compile_end_to_end_cites_and_adds_a_bullet():
             {"answer": "Lyon", "bullet_ids": ""},
             {"bullet_tags": "", "lessons": "For capital questions, answer with the city name only."},
             {"answer": "Paris", "bullet_ids": ""},
-            {"additions": "geography :: For capital questions, answer with the city name only."},
+            {"operations": "ADD geography :: For capital questions, answer with the city name only."},
             {"answer": "Paris", "bullet_ids": "geog-00001"},
         ]
     )

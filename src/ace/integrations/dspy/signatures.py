@@ -37,16 +37,28 @@ class Reflect(dspy.Signature):
 
 
 class Curate(dspy.Signature):
-    """Turn reflection lessons into new playbook bullets.
+    """Maintain the playbook by proposing edit operations.
 
-    Only add genuinely new, reusable insights. Do NOT restate bullets already
-    present. Assign each to a short section name.
+    You are the *curator* of a living playbook: fold in new lessons, but also
+    keep it lean and non-redundant. Do not only add — actively prune. If a
+    lesson duplicates an existing bullet, DELETE or MERGE the duplicates rather
+    than adding another. If an existing bullet is wrong, obsolete, or superseded,
+    DELETE it. If it is close but imprecise, UPDATE it. Reference existing
+    bullets by their exact id (e.g. calc-00042) shown in the playbook.
     """
 
-    existing_playbook: str = dspy.InputField(desc="current playbook, may be empty")
+    existing_playbook: str = dspy.InputField(
+        desc="current playbook with bullet ids and helpful/harmful counters"
+    )
     lessons: str = dspy.InputField(desc="candidate lessons from reflection")
 
-    additions: str = dspy.OutputField(
-        desc="new bullets, ONE PER LINE, each formatted 'section :: content'; "
-        "empty if nothing should be added"
+    operations: str = dspy.OutputField(
+        desc=(
+            "playbook edit operations, ONE PER LINE, each exactly one of:\n"
+            "  ADD SECTION :: content        (a genuinely new strategy)\n"
+            "  UPDATE <id> :: new content    (refine an existing bullet)\n"
+            "  DELETE <id>                   (remove a redundant/obsolete bullet)\n"
+            "  MERGE <id1>,<id2>,... :: content   (collapse duplicates into one)\n"
+            "Prefer UPDATE/DELETE/MERGE over piling on ADDs. Empty if no change."
+        )
     )
