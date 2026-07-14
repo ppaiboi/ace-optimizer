@@ -3,6 +3,7 @@
 Public surface (engine core). The DSPy teleprompter wrapper lives separately.
 """
 
+from ace.checkpoint import Checkpoint, load_checkpoint, save_checkpoint
 from ace.core.adapter import ACEAdapter, EvaluationBatch, ReflectiveDataset
 from ace.curate import Curator, DirectCurator, LLMCurator
 from ace.engine import optimize
@@ -104,4 +105,7 @@ __all__ = [
     "Decision",
     "promote",
     "evaluate_candidate",
+    "Checkpoint",
+    "save_checkpoint",
+    "load_checkpoint",
 ]

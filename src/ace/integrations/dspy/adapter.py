@@ -113,6 +113,7 @@ class DspyAdapter:
         reflection_lm: dspy.LM | None = None,
         failure_score: float = 0.0,
         num_threads: int = 1,
+        reflect_input_chars: int = 2000,
     ) -> None:
         preds = list(student.named_predictors())
         if len(preds) != 1:
@@ -124,6 +125,10 @@ class DspyAdapter:
         self.reflection_lm = reflection_lm
         self.failure_score = failure_score
         self.num_threads = max(1, num_threads)
+        # Cap the (often huge) task text sent to the Reflector — the feedback
+        # already carries the gold answer, so the full context isn't needed and
+        # dominates cost. 0 disables the cap.
+        self.reflect_input_chars = reflect_input_chars
         # Build the citing generator from the student's task signature.
         self._base_signature = preds[0][1].signature
         self._predictor = build_ace_predictor(self._base_signature)
@@ -196,12 +201,15 @@ class DspyAdapter:
         """One reflection: tag cited bullets + extract lessons + a retry hint."""
         inputs = _inputs_of(sample)
         cited_text, cited_ids = _cited_bullets_text(playbook, gen.get("cited", []))
+        task_text = str(dict(inputs))
+        if self.reflect_input_chars and len(task_text) > self.reflect_input_chars:
+            task_text = task_text[: self.reflect_input_chars] + " …[truncated]"
         lm = self.reflection_lm or dspy.settings.lm
         n0 = len(getattr(lm, "history", []) or [])
         try:
             with dspy.context(lm=lm):
                 r = self._reflect(
-                    task=str(dict(inputs)),
+                    task=task_text,
                     generated_output="" if gen["pred"] is None else str(gen["pred"]),
                     feedback=gen["feedback"],
                     bullets_in_play=cited_text,

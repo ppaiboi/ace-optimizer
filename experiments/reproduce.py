@@ -16,6 +16,14 @@ numbers depend on the model. Results -> experiments/results/<task>_<model>.json.
     PYTHONPATH=src ./.venv/bin/python experiments/reproduce.py \
         --task finer --model bedrock/deepseek.v3-v1:0 \
         --train 500 --val 300 --test 441 --budget 800 --threads 8
+
+Cheaper + resumable ACE run (the levers that cut cost ~3-5x):
+    PYTHONPATH=src ./.venv/bin/python experiments/reproduce.py \
+        --task finer --model bedrock/deepseek.v3-v1:0 --methods ace \
+        --train 500 --val 300 --interim-val 100 --eval-steps 250 --rounds 1 \
+        --reflect-chars 2000 --ace-max-tokens 8000 --threads 8 \
+        --checkpoint experiments/results/ace.ckpt --progress
+If it's killed, re-run the identical command — it resumes from the checkpoint.
 """
 
 from __future__ import annotations
@@ -161,7 +169,21 @@ def main() -> None:
     ap.add_argument("--eval-steps", type=int, default=100)
     ap.add_argument("--dedup", action="store_true", help="off by default, matching the paper")
     ap.add_argument("--trace", action="store_true",
-                    help="cache the full ACE trace (archive JSON + demo/src/trace.json)")
+                    help="cache the full ACE trace (archive JSON + demo/public/trace.json)")
+    # cost / robustness knobs
+    ap.add_argument("--interim-val", type=int, default=None,
+                    help="use a smaller val subset for periodic checks (full val only at the end)")
+    ap.add_argument("--reflect-chars", type=int, default=2000,
+                    help="cap the task text sent to the Reflector (0 = no cap)")
+    ap.add_argument("--ace-max-tokens", type=int, default=4096,
+                    help="max_tokens for ACE generation (avoid truncation loops)")
+    ap.add_argument("--reflect-model", default=None,
+                    help="cheaper model for reflection/curation (defaults to --model)")
+    ap.add_argument("--checkpoint", default=None,
+                    help="path to a checkpoint file for pause/resume")
+    ap.add_argument("--checkpoint-every", type=int, default=50)
+    ap.add_argument("--no-resume", action="store_true", help="ignore an existing checkpoint")
+    ap.add_argument("--progress", action="store_true", help="print step/total progress")
     args = ap.parse_args()
 
     load_dotenv()
@@ -176,10 +198,11 @@ def main() -> None:
         print("No LM key found and not using bedrock.")
         return
 
-    dspy.configure(lm=dspy.LM(args.model, max_tokens=4096))
+    dspy.configure(lm=dspy.LM(args.model, max_tokens=args.ace_max_tokens))
     train = load(files["train"], args.train)
     val = load(files["val"], args.val)
     test = load(files["test"], args.test)
+    interim_val = val[: args.interim_val] if args.interim_val else None
     base_metric, feedback_metric = make_metrics(args.task)
     methods = args.methods.split(",")
     program = dspy.Predict("question -> answer")
@@ -222,15 +245,19 @@ def main() -> None:
 
     if "ace" in methods:
         t = time.time()
+        reflect_model = args.reflect_model or args.model
         ace = ACE(
             metric=feedback_metric,
-            reflection_lm=dspy.LM(args.model, temperature=1.0, max_tokens=8000),
+            reflection_lm=dspy.LM(reflect_model, temperature=1.0, max_tokens=8000),
             num_threads=args.threads,
             embed=embed, max_bullets=args.max_bullets,
             max_num_rounds=args.rounds,
             curator_frequency=args.curator_freq, eval_steps=args.eval_steps,
+            reflect_input_chars=args.reflect_chars,
+            checkpoint_path=args.checkpoint, checkpoint_every=args.checkpoint_every,
+            resume=not args.no_resume, progress=args.progress,
         )
-        aprog = ace.compile(program, trainset=train, valset=val)
+        aprog = ace.compile(program, trainset=train, valset=val, interim_valset=interim_val)
         acc = evaluate(aprog, test, base_metric, args.threads)
         out["results"]["ace"] = {
             "test_acc": acc,

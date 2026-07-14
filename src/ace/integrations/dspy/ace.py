@@ -45,6 +45,11 @@ class ACE(Teleprompter):
         failure_score: float = 0.0,
         num_threads: int = 1,
         seed: int = 0,
+        reflect_input_chars: int = 2000,
+        checkpoint_path: str | None = None,
+        checkpoint_every: int = 50,
+        resume: bool = True,
+        progress: bool = False,
     ) -> None:
         super().__init__()
         try:
@@ -66,6 +71,11 @@ class ACE(Teleprompter):
         self.failure_score = failure_score
         self.num_threads = num_threads
         self.seed = seed
+        self.reflect_input_chars = reflect_input_chars
+        self.checkpoint_path = checkpoint_path
+        self.checkpoint_every = checkpoint_every
+        self.resume = resume
+        self.progress = progress
 
     def compile(
         self,
@@ -74,6 +84,7 @@ class ACE(Teleprompter):
         trainset: Sequence[Any],
         teacher: dspy.Module | None = None,
         valset: Sequence[Any] | None = None,
+        interim_valset: Sequence[Any] | None = None,
         **kwargs,
     ) -> dspy.Module:
         assert trainset, "trainset must be non-empty"
@@ -88,15 +99,19 @@ class ACE(Teleprompter):
             reflection_lm=self.reflection_lm,
             failure_score=self.failure_score,
             num_threads=self.num_threads,
+            reflect_input_chars=self.reflect_input_chars,
         )
         result = optimize(
             self.seed_playbook, trainset, adapter,
-            valset=valset, epochs=self.epochs,
+            valset=valset, interim_valset=interim_valset, epochs=self.epochs,
             max_num_rounds=self.max_num_rounds,
             curator_frequency=self.curator_frequency,
             eval_steps=self.eval_steps,
             embed=self.embed, refine_threshold=self.refine_threshold,
             max_bullets=self.max_bullets, seed=self.seed,
+            checkpoint_path=self.checkpoint_path,
+            checkpoint_every=self.checkpoint_every,
+            resume=self.resume, progress=self.progress,
         )
 
         compiled = adapter.build_program(result.best_playbook)
