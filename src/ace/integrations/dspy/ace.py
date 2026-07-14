@@ -46,6 +46,7 @@ class ACE(Teleprompter):
         num_threads: int = 1,
         seed: int = 0,
         reflect_input_chars: int = 2000,
+        curator_token_budget: int = 80000,
         checkpoint_path: str | None = None,
         checkpoint_every: int = 50,
         resume: bool = True,
@@ -72,6 +73,7 @@ class ACE(Teleprompter):
         self.num_threads = num_threads
         self.seed = seed
         self.reflect_input_chars = reflect_input_chars
+        self.curator_token_budget = curator_token_budget
         self.checkpoint_path = checkpoint_path
         self.checkpoint_every = checkpoint_every
         self.resume = resume
@@ -100,6 +102,7 @@ class ACE(Teleprompter):
             failure_score=self.failure_score,
             num_threads=self.num_threads,
             reflect_input_chars=self.reflect_input_chars,
+            curator_token_budget=self.curator_token_budget,
         )
         result = optimize(
             self.seed_playbook, trainset, adapter,

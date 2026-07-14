@@ -37,28 +37,42 @@ class Reflect(dspy.Signature):
 
 
 class Curate(dspy.Signature):
-    """Maintain the playbook by proposing edit operations.
+    """Master curator of knowledge (ported from the ACE reference curator prompt).
 
-    You are the *curator* of a living playbook: fold in new lessons, but also
-    keep it lean and non-redundant. Do not only add — actively prune. If a
-    lesson duplicates an existing bullet, DELETE or MERGE the duplicates rather
-    than adding another. If an existing bullet is wrong, obsolete, or superseded,
-    DELETE it. If it is close but imprecise, UPDATE it. Reference existing
-    bullets by their exact id (e.g. calc-00042) shown in the playbook.
+    Your job is to identify what new insights should be added to an existing
+    playbook based on a reflection from a previous attempt. The playbook will be
+    used to help answer similar questions; the reflection was made with ground
+    truth that will NOT be available at use time, so add content that helps the
+    playbook user produce answers that align with the ground truth.
+
+    Instructions (verbatim from the paper):
+      * Review the existing playbook and the reflection from the previous attempt.
+      * Identify ONLY the NEW insights, strategies, or mistakes that are MISSING
+        from the current playbook.
+      * Avoid redundancy — if similar advice already exists, only add new content
+        that is a perfect complement to the existing playbook.
+      * Do NOT regenerate the entire playbook — only provide the additions needed.
+      * Focus on quality over quantity — a focused, well-organized playbook is
+        better than an exhaustive one.
+      * If there is no new content to add, return nothing.
+      * Be concise and specific — each addition should be actionable.
+      * Respect the token budget shown in the stats; as it fills, be more selective.
     """
 
     existing_playbook: str = dspy.InputField(
         desc="current playbook with bullet ids and helpful/harmful counters"
     )
-    lessons: str = dspy.InputField(desc="candidate lessons from reflection")
+    playbook_stats: str = dspy.InputField(
+        desc="size of the playbook so far vs. the token budget (stay within it)"
+    )
+    lessons: str = dspy.InputField(desc="candidate lessons (the recent reflection)")
 
     operations: str = dspy.OutputField(
         desc=(
-            "playbook edit operations, ONE PER LINE, each exactly one of:\n"
-            "  ADD SECTION :: content        (a genuinely new strategy)\n"
-            "  UPDATE <id> :: new content    (refine an existing bullet)\n"
-            "  DELETE <id>                   (remove a redundant/obsolete bullet)\n"
-            "  MERGE <id1>,<id2>,... :: content   (collapse duplicates into one)\n"
-            "Prefer UPDATE/DELETE/MERGE over piling on ADDs. Empty if no change."
+            "the additions to make, ONE PER LINE as 'SECTION :: content' — new, "
+            "missing, non-redundant strategies only. Empty if nothing new to add. "
+            "(You may also consolidate a true duplicate with 'MERGE <id1>,<id2> :: "
+            "content' or drop a clearly-wrong bullet with 'DELETE <id>', but ADD "
+            "is the norm.)"
         )
     )

@@ -114,6 +114,7 @@ class DspyAdapter:
         failure_score: float = 0.0,
         num_threads: int = 1,
         reflect_input_chars: int = 2000,
+        curator_token_budget: int = 80000,
     ) -> None:
         preds = list(student.named_predictors())
         if len(preds) != 1:
@@ -129,6 +130,9 @@ class DspyAdapter:
         # already carries the gold answer, so the full context isn't needed and
         # dominates cost. 0 disables the cap.
         self.reflect_input_chars = reflect_input_chars
+        # The paper's growth throttle: the curator sees playbook size vs. this
+        # budget and gets more selective as it fills (finance default 80k tokens).
+        self.curator_token_budget = curator_token_budget
         # Build the citing generator from the student's task signature.
         self._base_signature = preds[0][1].signature
         self._predictor = build_ace_predictor(self._base_signature)
@@ -235,10 +239,18 @@ class DspyAdapter:
             return []
         lm = self.reflection_lm or dspy.settings.lm
         n0 = len(getattr(lm, "history", []) or [])
+        rendered = playbook.render().strip()
+        approx_tokens = len(rendered) // 4  # ~4 chars/token
+        stats = (
+            f"{len(playbook.bullets)} bullets, ~{approx_tokens} tokens used of a "
+            f"{self.curator_token_budget}-token budget "
+            f"({100 * approx_tokens // max(1, self.curator_token_budget)}% full)."
+        )
         try:
             with dspy.context(lm=lm):
                 c = self._curate(
-                    existing_playbook=playbook.render().strip() or "(empty)",
+                    existing_playbook=rendered or "(empty)",
+                    playbook_stats=stats,
                     lessons="\n".join(f"- {ln}" for ln in lessons),
                 )
         except Exception:  # a bad LM parse -> add nothing this step

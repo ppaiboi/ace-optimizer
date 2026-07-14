@@ -175,6 +175,8 @@ def main() -> None:
                     help="use a smaller val subset for periodic checks (full val only at the end)")
     ap.add_argument("--reflect-chars", type=int, default=2000,
                     help="cap the task text sent to the Reflector (0 = no cap)")
+    ap.add_argument("--token-budget", type=int, default=80000,
+                    help="curator playbook token budget (paper finance default 80000)")
     ap.add_argument("--ace-max-tokens", type=int, default=4096,
                     help="max_tokens for ACE generation (avoid truncation loops)")
     ap.add_argument("--reflect-model", default=None,
@@ -254,6 +256,7 @@ def main() -> None:
             max_num_rounds=args.rounds,
             curator_frequency=args.curator_freq, eval_steps=args.eval_steps,
             reflect_input_chars=args.reflect_chars,
+            curator_token_budget=args.token_budget,
             checkpoint_path=args.checkpoint, checkpoint_every=args.checkpoint_every,
             resume=not args.no_resume, progress=args.progress,
         )
